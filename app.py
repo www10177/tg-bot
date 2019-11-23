@@ -208,8 +208,6 @@ def line_working_handle_message(event):
     text = event.message.text.lower()
     userid = event.source.user_id
     app.logger.info('LINE-WORKING : From %s received : %s'%(userid, text))
-    app.logger.debug(session_dict)
-    app.logger.debug(end_session_dict)
     if text.startswith('/stop'):
         if userid in session_dict:
             time = datetime.now()
@@ -247,24 +245,21 @@ def line_working_handle_message(event):
             lw_api.reply_message(event.reply_token,
                                  TextSendMessage(text=text))
 
-    elif text.startswith('/add'):
-        reply_text='請輸入 \"@新增 工作內容 工時(hr)\"\nExample: /add 耍廢 3.2   ====> 耍廢3.2hr'
-        lw_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
-    elif text.startswith('@新增 ') and userid not in end_session_dict:
+    elif (text.startswith('/add') or text.startswith('@add') or text.startswith('@新增')) and userid not in end_session_dict:
         parsed = text.split(' ')
         try :
             time = datetime.now()
-            period = float(parsed[2])
+            period = float(parsed[1])
             period = int(period*3600)
             time= datetime.strftime(time,'%Y-%m-%d')
-            title = parsed[1]
+            title = text[text.index(parsed[2]):]
             var = (userid,time,period,title)
             with sqlite3.connect(lw_db) as conn:
                 cursor=conn.cursor()
                 cursor.execute('INSERT INTO working_hours (userid,time,period,title) VALUES(?,?,?,?)',var)
-            reply_text = '成功新增 %s - %sHR - %s' %(time, parsed[2],title)
+            reply_text = '成功新增 %s - %sHR - %s' %(time, parsed[1],title)
         except :
-            reply_text='請輸入 \"@新增 工作內容 工時(hr)\"\nExample: /add 耍廢 3.2   ====> 耍廢3.2hr'
+            reply_text='請輸入 \"@新增 工時(hr) 工作內容\"\nExample:@新增 3.2 耍廢    ====> 耍廢3.2hr'
         lw_api.reply_message(event.reply_token,
                                  TextSendMessage(text=reply_text))
     elif (text.startswith('/report') or text.startswith('@report')) and userid not in end_session_dict:
