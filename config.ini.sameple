@@ -1,3 +1,8 @@
+[PATH]
+DB=/var/www/tg-bot/work_hard_play_hard.db
 [TELEGRAM]
-TIANTAI_TOKEN = xxxxxxxxxxxxxxxxxxxx
+TIANTAI_TOKEN=xxxxxxxxxxxxxxxxxxxxx
 
+[LINE]
+WORKING_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxx
+WORKING_SECRET=xxxxxxxxxxxxxxxxxxxxxx
