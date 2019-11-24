@@ -205,6 +205,7 @@ def line_working():
         return 'Work Hard, Play Hard.'
 @lw_handler.add(MessageEvent,message=TextMessage)
 def line_working_handle_message(event):
+    global session_dict, end_session_dict
     text = event.message.text.lower()
     userid = event.source.user_id
     app.logger.info('LINE-WORKING : From %s received : %s'%(userid, text))
@@ -306,6 +307,48 @@ def line_working_handle_message(event):
                 text ='成功紀錄: %s : %.1f HR - %s'%(var[1],var[2]/3600,var[3])
         lw_api.reply_message(event.reply_token,\
                              TextSendMessage(text=text))
+    elif text == '/show':
+        text = 'session len : %d, end_session : %d '%(len(session_dict), len(end_session_dict))
+        app.logger.info('===session dict====')
+        for key,value in session_dict.items():
+            app.logger.info(key)
+        app.logger.info('endsession dict')
+        for key,value in end_session_dict.items():
+            app.logger.info(key)
+        lw_api.reply_message(event.reply_token,\
+                             TextSendMessage(text=text))
+    elif text == '/save' :
+        try :
+            path = '/var/www/tg-bot/log/'
+            app.logger.info('Save files to %s'%path)
+            with open(path+'bot_session.pkl','wb') as f:
+                pickle.dump(session_dict,f)
+            with open(path+'bot_endsession.pkl','wb') as f:
+                pickle.dump(end_session_dict,f)
+            text = 'session len : %d, end_session : %d '%(len(session_dict), len(end_session_dict))
+        except : 
+            text = 'save error'
+        lw_api.reply_message(event.reply_token,\
+                             TextSendMessage(text=text))
+    elif text == '/load' :
+        path = '/var/www/tg-bot/log/'
+        app.logger.info('load files from %s'%path)
+        try : 
+            if len(session_dict) != 0 or len(end_session_dict) != 0:
+                app.logger.error('ERROR loading : dict not empty ' )
+            with open(path+'bot_session.pkl','rb') as f:
+                session_dict= pickle.load(f)
+            with open(path+'bot_endsession.pkl','rb') as f:
+                end_session_dict= pickle.load(f)
+            os.remove(path+'bot_session.pkl')
+            os.remove(path+'bot_endsession.pkl')
+            text = 'session len : %d, end_session : %d '%(len(session_dict), len(end_session_dict))
+        except :
+            text = 'load error'
+        lw_api.reply_message(event.reply_token,\
+                             TextSendMessage(text=text))
+
+
         
 
 @lw_handler.add(PostbackEvent)
@@ -385,15 +428,6 @@ def stop_recording(userid,text):
     session_dict.pop(userid)
     end_session_dict.pop(userid)
     return var
-'''
-def save_file(a):
-    path = '/tmp/'
-    app.logger.info('Receive Quit SIGNAL, Save files to %s'%path)
-    with open(path+'bot_session.pkl','w') as f:
-        pickle.dump(session_dict,f)
-    with open(path+'bot_endsession.pkl','w') as f:
-        pickle.dump(end_session_dict,f)
-'''
 
 
 
