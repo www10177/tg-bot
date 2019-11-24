@@ -147,7 +147,7 @@ def handle_text(chat_text):
     text =chat_text
     text = text.lower()
     text_stripped = text.strip()
-    app.logger.info('TIANTAI : ',chat_text)
+    app.logger.info('TIANTAI : %s'%chat_text)
     if "天臺" in text or "天台" in text in text :
         return price()
     elif '免役'  in text:
@@ -206,29 +206,40 @@ def line_working():
 @lw_handler.add(MessageEvent,message=TextMessage)
 def line_working_handle_message(event):
     global session_dict, end_session_dict
-    text = event.message.text.lower()
+    parsed_text= event.message.text.lower().strip()
     userid = event.source.user_id
-    app.logger.info('LINE-WORKING : From %s received : %s'%(userid, text))
-    if text.startswith('/stop'):
+    app.logger.info('LINE-WORKING : From %s received : %s'%(userid, parsed_text))
+    if parsed_text.startswith('/stop'):
         if userid in session_dict:
             time = datetime.now()
-            button = TemplateSendMessage(alt_text='停止計時',
-                                         template=ConfirmTemplate(  text='停止計時, 是否紀錄工作內容',
-                                                                  actions=[ PostbackAction( label='Yes', display_text='紀錄工作內容', data='title'),
-                                                                           PostbackAction( label='No', display_text='不紀錄工作內容', data='notitle')]))
-            app.logger.debug(end_session_dict)
-            if userid not in end_session_dict:
-                end_session_dict[userid]=time
-                app.logger.debug('add user to end_session')
+            if (time -session_dict[userid]).seconds < 60:
+                button = TemplateSendMessage(alt_text='取消計時',
+                                             template=ConfirmTemplate(
+                                                 text='紀錄時長小於60秒，是否取消計時',
+                                                 actions=[ PostbackAction( label='Yes', display_text='取消計時',
+                                                                          data='cancel'),
+                                                          PostbackAction( label='No', display_text='保留，繼續計時',
+                                                                         data='continue')]))
+            else:
+                button = TemplateSendMessage(alt_text='停止計時',
+                                             template=ConfirmTemplate(
+                                                 text='停止計時, 是否紀錄工作內容',
+                                                 actions=[ PostbackAction( label='Yes', display_text='紀錄工作內容',
+                                                                          data='title'),
+                                                          PostbackAction( label='No', display_text='不紀錄工作內容',
+                                                                         data='notitle')]))
+                if userid not in end_session_dict:
+                    end_session_dict[userid]=time
+                    app.logger.debug('add user to end_session')
             lw_api.reply_message(event.reply_token,button)
         else: 
             lw_api.reply_message(event.reply_token,\
                                  TextSendMessage(text=r'請先"開始計時" (輸入/start) '))
-    elif userid in end_session_dict and not text.startswith('@'):
+    elif userid in end_session_dict and not parsed_text.startswith('@'):
         lw_api.reply_message(event.reply_token,
                              TextSendMessage(text='請先按下不紀錄工作內容的按鈕，或輸入工作內容\n指令:@工作內容\nExample : @耍廢'))
                              
-    elif text.startswith('/start'):
+    elif parsed_text.startswith('/start'):
         app.logger.debug(session_dict)
         if userid in session_dict:
             button = TemplateSendMessage(alt_text='重新計時?',
@@ -246,14 +257,16 @@ def line_working_handle_message(event):
             lw_api.reply_message(event.reply_token,
                                  TextSendMessage(text=text))
 
-    elif (text.startswith('/add') or text.startswith('@add') or text.startswith('@新增')) and userid not in end_session_dict:
-        parsed = text.split(' ')
+    elif (parsed_text.startswith('/add') or parsed_text.startswith('@add') or parsed_text.startswith('@新增')) and userid not in end_session_dict:
+        text= parsed_text.split(' ')
         try :
             time = datetime.now()
             period = float(parsed[1])
             period = int(period*3600)
             time= datetime.strftime(time,'%Y-%m-%d')
-            title = text[text.index(parsed[2]):]
+            raw_text = event.message.text
+            title = raw_text[raw_text.index(parsed[2]):]
+            title = title.strip('\n')
             var = (userid,time,period,title)
             with sqlite3.connect(lw_db) as conn:
                 cursor=conn.cursor()
@@ -263,39 +276,57 @@ def line_working_handle_message(event):
             reply_text='請輸入 \"@新增 工時(hr) 工作內容\"\nExample:@新增 3.2 耍廢    ====> 耍廢3.2hr'
         lw_api.reply_message(event.reply_token,
                                  TextSendMessage(text=reply_text))
-    elif (text.startswith('/report') or text.startswith('@report')) and userid not in end_session_dict:
+    elif (parsed_text.startswith('/report') or parsed_text.startswith('@report')) and userid not in end_session_dict:
         def sec2time(total_seconds):
             sum_h,remainder = divmod( total_seconds,3600)
             sum_m,sum_s = divmod(remainder,60)
             return (sum_h,sum_m,sum_s)
         days = 15
-        if len(text.split(' ') )>1:
+        if len(parsed_text.split(' ') )>1:
             try :
-                days = int(text.split(' ')[1])
+                days = int(parsed_text.split(' ')[1])
             except :
                 text = '若欲指定近n天的工作統計請用\"@report n\"\n n 為自然數'
                 lw_api.reply_message(event.reply_token,\
                                      TextSendMessage(text=text))
                 return
+        easy = True  if 'reporteasy' in parsed_text else False
         startdate = date.today() - timedelta(days=days)
         startdate = datetime.strftime(startdate,'%Y-%m-%d')
-        text = '若欲指定近n天的工作統計請用\"/report n\"\n'
+        text=''
+        if not easy:
+            text += '若欲指定近n天的工作統計請用\"@report n\"\n'
+            text += '使用@reporteasy輸出方便報告的格式\n'
         text += '以下為近%d天的工作內容 : \n'%days
-        text += '%s-%s-%s\n'%('日期','工時(HH:MH:SS)','工作內容')
+        #text += '%s-%s-%s\n'%('日期','工時(HH:MM:SS)','工作內容')
         with sqlite3.connect(lw_db) as conn:
             cursor=conn.cursor()
             cursor.execute('SELECT * FROM working_hours WHERE userid == ? AND  time >= ? ORDER BY time ASC',(userid,startdate))
-            formatstr='%s-%s-%s\n'
             records = cursor.fetchall()
         total_seconds = 0
+        last_date = ''
         for _id,_userid,_time,_period,_title in records:
-            period_str ='%02d:%02d:%02d'%sec2time(_period)
-            text+=formatstr %(_time[5:].replace('-','/'),period_str,_title)#Remove Year
+            _time = _time[5:].replace('-','/')#Remove Year
+            _title = _title.strip('\n')
+            if not easy :
+                if _time != last_date :
+                    text+='=====%s=====\n'%_time
+                    last_date = _time
+                period_str ='%02d:%02d:%02d'%sec2time(_period) 
+                text+='%s - %s\n'%(period_str,_title)
+            else:
+                period_str ='%.1f'%(_period/3600)
+                text+='%s : %sHR\n'%(_title,period_str)
+
             total_seconds += _period
-        text += '總時長(HH:MM:SS) : %02d:%02d:%02d'%sec2time(total_seconds)
+        if not easy :
+            text += '總時長(HH:MM:SS) : %02d:%02d:%02d'%sec2time(total_seconds)
+        else:
+            text += 'Total about %.1f HR'% (total_seconds/3600)
+
         lw_api.reply_message(event.reply_token,
                              TextSendMessage(text=text))
-    elif text.startswith('@'): 
+    elif parsed_text.startswith('@'): 
         if userid not in session_dict:
             text = '不存在尚未儲存的計時階段，請先開始計時'
         else :
@@ -307,7 +338,7 @@ def line_working_handle_message(event):
                 text ='成功紀錄: %s : %.1f HR - %s'%(var[1],var[2]/3600,var[3])
         lw_api.reply_message(event.reply_token,\
                              TextSendMessage(text=text))
-    elif text == '/show':
+    elif parsed_text == '/show':
         text = 'session len : %d, end_session : %d '%(len(session_dict), len(end_session_dict))
         app.logger.info('===session dict====')
         for key,value in session_dict.items():
@@ -317,7 +348,7 @@ def line_working_handle_message(event):
             app.logger.info(key)
         lw_api.reply_message(event.reply_token,\
                              TextSendMessage(text=text))
-    elif text == '/save' :
+    elif parsed_text == '/save' :
         try :
             path = '/var/www/tg-bot/log/'
             app.logger.info('Save files to %s'%path)
@@ -330,7 +361,7 @@ def line_working_handle_message(event):
             text = 'save error'
         lw_api.reply_message(event.reply_token,\
                              TextSendMessage(text=text))
-    elif text == '/load' :
+    elif parsed_text == '/load' :
         path = '/var/www/tg-bot/log/'
         app.logger.info('load files from %s'%path)
         try : 
@@ -390,8 +421,20 @@ def line_working_postback(event):
             text ='成功紀錄: %s : %.1f HR - %s'%(var[1],var[2]/3600,var[3])
         except: 
             text ='紀錄失敗，不存在尚未儲存的計時階段'
+    elif data =='cancel':
+        if userid in session_dict:
+            start_time = session_dict[userid]
+            session_dict.pop(userid)
+            text = '已成功取消%s開始的計時' %(datetime.strftime(start_time,'%H:%M:%S'))
+    elif data =='continue':
+        if userid in session_dict:
+            start_time = session_dict[userid]
+            period= (datetime.now()-start_time).seconds
+            text = '%s 開始，已持續 %.1f Min' \
+                    %(datetime.strftime(start_time,'%H:%M:%S'),period/60)
     else:
         app.logger.error('LINE-WORKER : POSTBACK : GETEXCEPTION',data)
+        return
     lw_api.reply_message(event.reply_token,\
                          TextSendMessage(text=text))
 
